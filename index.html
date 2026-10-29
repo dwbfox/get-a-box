@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>get-a-box</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <link rel="stylesheet" href="css/app.css">
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
+  <script src="vendor/js-yaml.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo">▣</span> get-a-box</div>
+    <div class="conn">
+      <span id="conn-pill" class="pill pill-off">not connected</span>
+      <select id="project-select" title="LXD project"></select>
+    </div>
+    <button id="open-settings" class="btn">⚙ Settings</button>
+  </header>
+
+  <main class="layout">
+    <aside class="side">
+      <section class="card">
+        <h2>Launch</h2>
+
+        <div class="label">Release</div>
+        <div id="release-grid" class="choice-grid"></div>
+
+        <div class="label">Type</div>
+        <div class="seg" id="type-seg">
+          <button data-type="container" class="active">Container</button>
+          <button data-type="virtual-machine">VM</button>
+        </div>
+
+        <div class="label">Profile</div>
+        <div id="preset-grid" class="choice-grid presets"></div>
+
+        <div class="label">Kernel</div>
+        <div id="kernel-grid" class="choice-grid"></div>
+        <div id="kver-row" class="kver-row" hidden>
+          <label>Kernel version <select id="l-kver"></select></label>
+          <small id="kver-hint" class="muted"></small>
+        </div>
+
+        <div class="label">Add-on Pro services</div>
+        <div id="service-grid" class="choice-grid presets"></div>
+
+        <div class="label">Network</div>
+        <select id="l-net" title="Network for eth0; overrides the default profile's NICs"></select>
+
+        <div id="launch-warnings" class="warnings"></div>
+
+        <details class="adv">
+          <summary>Resources &amp; extras</summary>
+          <div class="row3">
+            <label>CPUs <input id="l-cpu" type="number" min="1" max="64"></label>
+            <label>Memory <input id="l-mem" placeholder="2GiB"></label>
+            <label>Disk <input id="l-disk" placeholder="10GiB"></label>
+          </div>
+          <label>Name <input id="l-name" placeholder="auto"></label>
+          <label>Extra cloud-config (merged)
+            <textarea id="l-extra" rows="4" spellcheck="false" placeholder="packages: [htop]"></textarea>
+          </label>
+          <button id="l-preview" class="btn btn-ghost" type="button">Preview user-data</button>
+          <pre id="l-preview-out" class="preview" hidden></pre>
+        </details>
+
+        <button id="launch-btn" class="btn btn-primary btn-wide">Launch &amp; connect</button>
+        <label class="radio cache-toggle"><input type="checkbox" id="l-cache" checked> Use image cache</label>
+        <div id="cache-hint" class="cache-hint"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Boxes</h2>
+          <label class="small"><input type="checkbox" id="show-all"> show all</label>
+          <button id="refresh-btn" class="btn btn-ghost btn-sm" title="Refresh">↻</button>
+        </div>
+        <ul id="box-list" class="box-list"></ul>
+      </section>
+    </aside>
+
+    <section class="work">
+      <nav id="tabs" class="tabs"></nav>
+      <div id="terms" class="terms">
+        <div id="empty-state" class="empty">
+          <h3>Pick a release, hit launch, get a shell.</h3>
+          <p>Configure your LXD endpoint, Pro token and SSH import IDs in <b>Settings</b>.</p>
+        </div>
+      </div>
+      <div id="log" class="log" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <dialog id="settings">
+    <form method="dialog" id="settings-form" novalidate>
+      <button value="save" hidden></button>
+      <header class="dlg-head">
+        <h2>Settings</h2>
+        <button class="btn btn-ghost" value="cancel" formnovalidate>✕</button>
+      </header>
+      <div class="dlg-body">
+        <fieldset>
+          <legend>LXD endpoint</legend>
+          <label class="radio"><input type="radio" name="mode" value="proxy"> Via local <code>serve.py</code> (uses your <code>lxc</code> remotes &amp; client cert)</label>
+          <label class="radio"><input type="radio" name="mode" value="direct"> Direct HTTPS to LXD API (browser client cert)</label>
+          <div data-mode="proxy">
+            <label>Remote <select id="s-remote"></select></label>
+          </div>
+          <div data-mode="direct">
+            <label>API URL <input id="s-url" type="url" placeholder="https://10.0.0.5:8443"></label>
+            <p class="hint">LXD blocks cross-site writes (CSRF), so direct mode only works when this page is served from the same origin as the API (e.g. behind your own reverse proxy). The browser must hold a trusted client certificate.</p>
+            <div class="inline">
+              <input id="s-trust" placeholder="trust token from: lxc config trust add --name browser">
+              <button type="button" id="s-trust-btn" class="btn btn-sm">Add trust</button>
+            </div>
+          </div>
+          <label>Project <input id="s-project" placeholder="default"></label>
+          <div class="inline"><button type="button" id="s-test" class="btn btn-sm">Test connection</button> <span id="s-test-out" class="hint"></span></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Ubuntu Pro</legend>
+          <label>Token <input id="s-pro" type="password" autocomplete="off" placeholder="C1…"></label>
+          <label class="radio"><input type="checkbox" id="s-always-attach"> Attach Pro on every launch (not only Pro presets)</label>
+          <p class="hint">Stored in this browser's localStorage and passed via cloud-init user-data, which is readable by anyone with access to the LXD instance config.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>SSH keys (ssh-import-id)</legend>
+          <label>IDs <input id="s-ssh" placeholder="gh:octocat lp:jdoe"></label>
+          <p class="hint">Space/comma separated. Bare names are treated as <code>gh:</code>. Imported for the default <code>ubuntu</code> user.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>User-data overrides</legend>
+          <label class="radio"><input type="radio" name="udmode" value="merge"> Merge into generated cloud-config</label>
+          <label class="radio"><input type="radio" name="udmode" value="replace"> Replace generated cloud-config entirely</label>
+          <textarea id="s-userdata" rows="7" spellcheck="false" placeholder="#cloud-config&#10;timezone: UTC&#10;packages: [sosreport]"></textarea>
+        </fieldset>
+
+        <fieldset>
+          <legend>Image cache</legend>
+          <label class="radio"><input type="checkbox" id="s-cache"> Cache verified builds as LXD images and reuse them</label>
+          <label>Expire after (days) <input id="s-cache-ttl" type="number" min="1" max="90"></label>
+          <p class="hint">Images are keyed by release, type, profile, kernel, services, Pro token and user-data. Changing any of these (or the token) builds a new image; stale ones are pruned on connect. Cached Pro images stay attached to your subscription.</p>
+          <ul id="s-cache-list" class="cache-list"></ul>
+          <button type="button" id="s-cache-clear" class="btn btn-sm btn-danger">Clear cache</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>Defaults</legend>
+          <div class="row3">
+            <label>CPUs <input id="s-cpu" type="number" min="1" max="64"></label>
+            <label>Memory <input id="s-mem"></label>
+            <label>Disk <input id="s-disk"></label>
+          </div>
+          <div class="row3">
+            <label>Storage pool <input id="s-pool" placeholder="default"></label>
+            <label>Shell user <input id="s-user" placeholder="root"></label>
+            <label>Name prefix <input id="s-prefix" placeholder="gab"></label>
+          </div>
+        </fieldset>
+      </div>
+      <footer class="dlg-foot">
+        <button type="button" id="s-reset" class="btn btn-danger btn-sm">Forget all settings</button>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn btn-primary" value="save" id="s-save">Save</button>
+      </footer>
+    </form>
+  </dialog>
+</body>
+</html>
