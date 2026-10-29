@@ -4,7 +4,7 @@ A static browser app to quickly launch Ubuntu LXD containers and VMs, optionally
 Ubuntu Pro presets (FIPS, DISA STIG, CIS, real-time kernel), and drop straight into a
 web terminal.
 
-It is built for Ubuntu support engineers and troubleshooters who constantly need a
+It is built for Ubuntu users and troubleshooters who constantly need a
 throwaway reproducer: "FIPS on 22.04", "DISA STIG on 24.04", "plain focal container"
 — pick a release, pick a profile, click **Launch & connect**, get a shell.
 
