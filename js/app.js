@@ -691,6 +691,7 @@ async function openSettings() {
   $("#s-cache-ttl").value = s.cacheTtlDays;
   renderCacheList();
   $("#s-test-out").textContent = "";
+  $("#s-remote-token").value = "";
   showModeFields();
   const sel = $("#s-remote");
   sel.replaceChildren();
@@ -786,6 +787,39 @@ function init() {
       const info = (await formClient().server()).metadata;
       out.textContent = `OK: LXD ${info.environment?.server_version || "?"}, auth=${info.auth}`;
     } catch (e) { out.textContent = `Failed: ${e.message}`; }
+  });
+  $("#s-remote-add").addEventListener("click", async () => {
+    const out = $("#s-test-out");
+    const button = $("#s-remote-add");
+    button.disabled = true;
+    out.textContent = "Enrolling remote…";
+    try {
+      const res = await fetch("/_gab/remotes", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: $("#s-remote-name").value.trim(),
+          addr: $("#s-remote-url").value.trim(),
+          token: $("#s-remote-token").value.trim(),
+        }),
+      });
+      if (res.status === 405 || !(res.headers.get("Content-Type") || "").includes("application/json")) {
+        throw new Error("Remote enrollment requires the updated serve.py. Restart it and reload this page.");
+      }
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+      $("#s-remote-token").value = "";
+      const r = await fetchProxyRemotes();
+      state.remotes = r.remotes;
+      $("#s-remote").replaceChildren(...r.remotes.map((x) =>
+        el("option", { value: x.name, selected: x.name === result.name }, `${x.name} (${x.addr})`)));
+      out.textContent = `Remote ${result.name} added and selected. Test connection, then Save.`;
+    } catch (e) {
+      out.textContent = `Remote enrollment failed: ${e.message}`;
+    } finally {
+      button.disabled = false;
+    }
   });
   $("#s-trust-btn").addEventListener("click", async () => {
     const out = $("#s-test-out");

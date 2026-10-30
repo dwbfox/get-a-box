@@ -44,7 +44,17 @@ cd get-a-box
   or `/var/lib/lxd/unix.socket`). Your user needs access to it, e.g. membership of the `lxd`
   group.
 
-To add a remote LXD server:
+To add a remote LXD server, open **Settings → Via local serve.py → Add a remote LXD host**.
+Enter a remote name (e.g. `supermicro`), its HTTPS URL (e.g. `https://172.16.66.10:8443`),
+and a token generated **on that remote server** with `lxc config trust add --name get-a-box`.
+Click **Add remote**, then **Test connection** and **Save**.
+
+Enrollment requires `lxc` on the machine running `serve.py`. It saves the remote and pinned
+server certificate in your LXC configuration, using LXC's token verification rather than
+disabling TLS verification. The token is not saved in browser settings. This works even when
+the browser cannot access the remote API because of CORS or its self-signed certificate.
+
+Alternatively, add the remote from the command line:
 
 ```sh
 # on the server
@@ -69,18 +79,20 @@ LXD protects its API against CSRF: LXD 5.21 checks `Sec-Fetch-Site`, and LXD 6.8
 to the LXD API, even with a valid client certificate and CORS configured. The app and the API
 must share an origin.
 
-`serve.py` solves that with a tiny, **stateless** same-origin server:
+`serve.py` solves that with a tiny same-origin server:
 
 - Serves the static files (`/`, `favicon.svg`, `css/`, `js/`, `vendor/`).
 - Reverse-proxies `/_gab/r/<remote>/1.0/...` (including exec websockets) to the chosen remote,
   and lists remotes at `/_gab/remotes`.
+- Enrolls remote hosts through `POST /_gab/remotes` using `lxc remote add` and a trust token.
 - Python standard library only, no dependencies.
 - Binds `127.0.0.1:8080` by default.
 - Rejects API requests with an unexpected `Host`, a mismatched `Origin`, a cross-site
   `Sec-Fetch-Site`, or a non-JSON request body. Exec websocket secrets are redacted in its log.
 
 Everything else — settings, Pro token, SSH IDs, user-data overrides, last-used choices — lives in
-the browser's `localStorage`. `serve.py` stores nothing.
+the browser's `localStorage`. `serve.py` does not store app settings. Adding a remote updates
+your LXC configuration and certificate files through `lxc remote add`.
 
 ## Direct mode (browser mTLS)
 

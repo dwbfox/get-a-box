@@ -12,6 +12,7 @@ import re
 import select
 import socket
 import ssl
+import subprocess
 import sys
 import threading
 import time
@@ -309,6 +310,8 @@ class Handler(BaseHTTPRequestHandler):
         if err:
             return self.send_json(403, {"error": err})
         if path == "/_gab/remotes":
+            if self.command == "POST":
+                return self.add_remote()
             if self.command not in ("GET", "HEAD"):
                 return self.send_json(405, {"error": "method not allowed"})
             return self.serve_remotes()
@@ -385,6 +388,53 @@ class Handler(BaseHTTPRequestHandler):
         items = [{"name": r.name, "addr": r.addr, "project": r.project}
                  for r in sorted(remotes.values(), key=lambda r: (r.name != "local", r.name))]
         self.send_json(200, {"default": default, "remotes": items})
+
+    def add_remote(self):
+        self.close_connection = True
+        if self.headers.get("Transfer-Encoding"):
+            return self.send_json(411, {"error": "chunked request bodies are not supported"})
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if not 0 < length <= 16384:
+                raise ValueError("request body must be between 1 and 16384 bytes")
+            body = json.loads(self.rfile.read(length))
+            if not isinstance(body, dict):
+                raise ValueError("request body must be a JSON object")
+            name, addr, token = (body.get(k) for k in ("name", "addr", "token"))
+            if not isinstance(name, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}", name):
+                raise ValueError("remote name must contain only letters, numbers, underscores or hyphens")
+            if not isinstance(addr, str) or any(c.isspace() for c in addr):
+                raise ValueError("remote address must be an https:// URL")
+            parts = urlsplit(addr)
+            if (parts.scheme != "https" or not parts.hostname or parts.username is not None
+                    or parts.password is not None or parts.path not in ("", "/")
+                    or parts.query or parts.fragment):
+                raise ValueError("remote address must be an https:// host URL without credentials or a path")
+            if parts.port == 0:
+                raise ValueError("invalid remote port")
+            if not isinstance(token, str) or not token.strip() or any(c.isspace() for c in token.strip()):
+                raise ValueError("a remote trust token is required")
+        except (ValueError, UnicodeError) as e:
+            return self.send_json(400, {"error": str(e)})
+        if name in load_remotes(self.server.conf_dir)[1]:
+            return self.send_json(409, {"error": "remote already exists: %s" % name})
+        token = token.strip()
+        try:
+            result = subprocess.run(
+                ["lxc", "remote", "add", name, addr, "--auth-type=tls", "--token", token],
+                env={**os.environ, "LXD_CONF": self.server.conf_dir},
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=90,
+            )
+        except FileNotFoundError:
+            return self.send_json(503, {"error": "lxc is required on the machine running serve.py"})
+        except subprocess.TimeoutExpired:
+            return self.send_json(504, {"error": "remote enrollment timed out; check server reachability and retry"})
+        except OSError as e:
+            return self.send_json(502, {"error": "cannot run lxc: %s" % e})
+        if result.returncode:
+            detail = (result.stderr.strip() or result.stdout.strip() or "lxc remote add failed").replace(token, "[redacted]")
+            return self.send_json(502, {"error": detail})
+        self.send_json(201, {"name": name})
 
     def serve_kernel_versions(self):
         q = parse_qs(urlsplit(self.path).query)

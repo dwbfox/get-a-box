@@ -110,10 +110,18 @@
           <label class="radio"><input type="radio" name="mode" value="direct"> Direct HTTPS to LXD API (browser client cert)</label>
           <div data-mode="proxy">
             <label>Remote <select id="s-remote"></select></label>
+            <details>
+              <summary>Add a remote LXD host</summary>
+              <label>Remote name <input id="s-remote-name" placeholder="supermicro"></label>
+              <label>Host URL <input id="s-remote-url" type="url" placeholder="https://172.16.66.10:8443"></label>
+              <label>Trust token <input id="s-remote-token" type="password" autocomplete="off"></label>
+              <p class="hint">Generate a token on the remote server with <code>lxc config trust add --name get-a-box</code>. Enrollment uses the lxc client on the machine running serve.py, not browser HTTPS. The token is not saved in browser settings.</p>
+              <button type="button" id="s-remote-add" class="btn btn-sm">Add remote</button>
+            </details>
           </div>
           <div data-mode="direct">
             <label>API URL <input id="s-url" type="url" placeholder="https://10.0.0.5:8443"></label>
-            <p class="hint">LXD blocks cross-site writes (CSRF), so direct mode only works when this page is served from the same origin as the API (e.g. behind your own reverse proxy). The browser must hold a trusted client certificate.</p>
+            <p class="hint">For a remote host and trust token, use Via local serve.py → Add a remote LXD host instead. Direct mode requires a browser client certificate and an accepted server certificate; a token alone cannot establish browser HTTPS. LXD blocks cross-site writes (CSRF), so direct mode only works fully when this page shares the API origin.</p>
             <div class="inline">
               <input id="s-trust" placeholder="trust token from: lxc config trust add --name browser">
               <button type="button" id="s-trust-btn" class="btn btn-sm">Add trust</button>

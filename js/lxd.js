@@ -56,7 +56,10 @@ export class LxdClient {
     try {
       res = await fetch(this.url(path, params), init);
     } catch (e) {
-      throw new LxdError(`Network error talking to LXD (${e.message}). Check the endpoint, CORS/cert setup, or that serve.py is running.`, 0);
+      const hint = this.mode === "direct"
+        ? "The browser could not establish HTTPS to LXD (server certificate or CORS). A trust token does not bypass this or provide a browser client certificate. Use Settings → Via local serve.py → Add a remote LXD host to enroll with a host URL and token."
+        : "Check that serve.py is running and this page is opened through it.";
+      throw new LxdError(`Network error talking to LXD (${e.message}). ${hint}`, 0);
     }
     let data;
     try {
